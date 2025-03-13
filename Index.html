@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Reader with Drawing</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background-color: #f4f4f4; }
+        #pdf-container { width: 80%; margin: auto; background-color: white; padding: 20px; position: relative; }
+        .nav-button { position: absolute; top: 50%; transform: translateY(-50%); font-size: 24px; padding: 10px; cursor: pointer; background: black; color: white; border-radius: 50%; display: none; }
+        #prev { left: 10px; }  #next { right: 10px; }
+        canvas { position: absolute; left: 0; top: 0; }
+        .pen-tool { position: fixed; top: 50%; right: 20px; background: #ff9800; padding: 15px; cursor: pointer; border-radius: 50%; font-size: 20px; }
+        .color-picker { position: fixed; top: 55%; right: 20px; background: white; padding: 10px; border: 1px solid #ddd; display: none; }
+        .color-option { width: 30px; height: 30px; margin: 5px; cursor: pointer; border-radius: 50%; display: inline-block; }
+        .clear-button, .undo-button { background: red; color: white; cursor: pointer; padding: 5px; border: none; display: block; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>PDF Reader</h1>
+    <input type="file" id="upload" accept="application/pdf">
+    <div id="pdf-container" onmouseover="showNav()" onmouseleave="hideNav()">
+        <button id="prev" class="nav-button">←</button>
+        <div id="canvas-container" style="position: relative;">
+            <canvas id="pdf-render"></canvas>
+            <canvas id="draw-layer"></canvas>
+        </div>
+        <button id="next" class="nav-button">→</button>
+    </div>
+    <div class="pen-tool" id="penTool">✏️</div>
+    <div class="color-picker" id="colorPicker">
+        <div class="color-option" style="background: black;" data-color="black"></div>
+        <div class="color-option" style="background: red;" data-color="red"></div>
+        <div class="color-option" style="background: blue;" data-color="blue"></div>
+        <div class="color-option" style="background: green;" data-color="green"></div>
+        <button class="undo-button" id="undo">Oldingini o‘chirish</button>
+        <button class="clear-button" id="clearCanvas">Hammasini o‘chirish</button>
+    </div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+        
+        let pdfDoc = null, pageNum = 1, pdfCanvas = document.getElementById("pdf-render"),
+            drawCanvas = document.getElementById("draw-layer"), pdfCtx = pdfCanvas.getContext("2d"),
+            drawCtx = drawCanvas.getContext("2d"), drawing = false, selectedColor = "black", history = [];
+
+        document.getElementById("upload").addEventListener("change", event => {
+            let file = event.target.files[0];
+            if (file && file.type === "application/pdf") {
+                let fileReader = new FileReader();
+                fileReader.onload = () => {
+                    let typedArray = new Uint8Array(fileReader.result);
+                    pdfjsLib.getDocument(typedArray).promise.then(pdfDoc_ => {
+                        pdfDoc = pdfDoc_;
+                        renderPage(pageNum);
+                    });
+                };
+                fileReader.readAsArrayBuffer(file);
+            }
+        });
+
+        function renderPage(num) {
+            pdfDoc.getPage(num).then(page => {
+                let viewport = page.getViewport({ scale: 1.5 });
+                pdfCanvas.width = viewport.width;
+                pdfCanvas.height = viewport.height;
+                drawCanvas.width = viewport.width;
+                drawCanvas.height = viewport.height;
+                let renderContext = { canvasContext: pdfCtx, viewport: viewport };
+                page.render(renderContext);
+                drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+                history = [];
+            });
+        }
+
+        document.getElementById("prev").addEventListener("click", () => { if (pageNum > 1) renderPage(--pageNum); });
+        document.getElementById("next").addEventListener("click", () => { if (pageNum < pdfDoc.numPages) renderPage(++pageNum); });
+
+        drawCanvas.addEventListener("mousedown", () => { drawing = true; history.push(drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height)); });
+        drawCanvas.addEventListener("mouseup", () => { drawing = false; drawCtx.beginPath(); });
+        drawCanvas.addEventListener("mousemove", event => {
+            if (!drawing) return;
+            let rect = drawCanvas.getBoundingClientRect();
+            let x = event.clientX - rect.left;
+            let y = event.clientY - rect.top;
+            drawCtx.lineWidth = 3;
+            drawCtx.lineCap = "round";
+            drawCtx.strokeStyle = selectedColor;
+            drawCtx.lineTo(x, y);
+            drawCtx.stroke();
+            drawCtx.beginPath();
+            drawCtx.moveTo(x, y);
+        });
+
+        document.getElementById("penTool").addEventListener("click", () => {
+            let colorPicker = document.getElementById("colorPicker");
+            colorPicker.style.display = (colorPicker.style.display === "block") ? "none" : "block";
+        });
+
+        document.querySelectorAll(".color-option").forEach(option => {
+            option.addEventListener("click", () => {
+                selectedColor = option.getAttribute("data-color");
+                document.getElementById("colorPicker").style.display = "none";
+            });
+        });
+
+        document.getElementById("undo").addEventListener("click", () => {
+            if (history.length > 0) drawCtx.putImageData(history.pop(), 0, 0);
+        });
+
+        document.getElementById("clearCanvas").addEventListener("click", () => {
+            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            history = [];
+        });
+
+        function showNav() { document.querySelectorAll(".nav-button").forEach(btn => btn.style.display = "block"); }
+        function hideNav() { document.querySelectorAll(".nav-button").forEach(btn => btn.style.display = "none"); }
+    </script>
+</body>
+</html>
